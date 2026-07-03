@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ambliyopi VR - Klinik Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1050px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .search-box { margin: 20px 0; display: flex; gap: 10px; }
+        input[type="text"] { padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; width: 250px; }
+        button { padding: 12px 20px; font-size: 16px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background-color: #2980b9; }
+        
+        /* Silme butonu için özel stil */
+        .btn-sil { background-color: #e74c3c; padding: 8px 15px; font-size: 14px; }
+        .btn-sil:hover { background-color: #c0392b; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #ecf0f1; color: #2c3e50; }
+        .trend-iyi { color: #27ae60; font-weight: bold; }
+    </style>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h1>Klinik Telemetri Paneli (Ambliyopi VR)</h1>
+    <p>Bulut sistemine yansıyan hasta antrenman verilerini sorgulayın ve yönetin.</p>
+
+    <div class="search-box">
+        <input type="text" id="hasta-id-input" placeholder="Denek Kodu (Örn: HT-001)">
+        <button onclick="verileriCek()">Sorgula</button>
+    </div>
+
+    <table id="veri-tablosu">
+        <thead>
+            <tr>
+                <th>Tarih / Saat</th>
+                <th>Tembel Göz</th>
+                <th>Süre</th>
+                <th>Vuruş Skoru</th>
+                <th>Başlangıç Keskinliği</th>
+                <th>Bitiş Opaklığı (Zorluk)</th>
+                <th>İşlem</th>
+            </tr>
+        </thead>
+        <tbody id="tablo-govdesi">
+            </tbody>
+    </table>
+</div>
+
+<script>
+    // Firebase Başlatma
+    const firebaseConfig = {
+      apiKey: "AIzaSyAGvAdBS7utUpW8JgT_mtfQd1C9zObTZvc",
+      authDomain: "ambliyopi-vr-telemetri-2b55e.firebaseapp.com",
+      projectId: "ambliyopi-vr-telemetri-2b55e",
+      storageBucket: "ambliyopi-vr-telemetri-2b55e.firebasestorage.app",
+      messagingSenderId: "963371040140",
+      appId: "1:963371040140:web:c64c1be01071a8d157eaa9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Verileri Buluttan Çekme ve Ekrana Basma
+    function verileriCek() {
+        let hamArananId = document.getElementById('hasta-id-input').value;
+        const arananId = hamArananId.trim().toUpperCase(); 
+        
+        const tabloGovdesi = document.getElementById('tablo-govdesi');
+        tabloGovdesi.innerHTML = "<tr><td colspan='7'>Veriler yükleniyor...</td></tr>";
+        db.collection("seans_verileri").where("hasta_id", "==", arananId).get().then((querySnapshot) => {
+            if (querySnapshot.empty) {
+                tabloGovdesi.innerHTML = "<tr><td colspan='7' style='color:red;'>Bu ID ile eşleşen kayıt bulunamadı.</td></tr>";
+                return;
+            }
+
+            // Gelen verileri tarihe göre yeniden eskiye sıralamak için diziye alıyoruz
+            let veriler = [];
+            querySnapshot.forEach((doc) => {
+                // Firebase'in atadığı benzersiz döküman ID'sini de (doc.id) veriye ekliyoruz
+                let veri = doc.data();
+                veri.doc_id = doc.id; 
+                veriler.push(veri);
+            });
+            
+            veriler.sort((a, b) => new Date(b.tarih) - new Date(a.tarih));
+
+            tabloGovdesi.innerHTML = "";
+            veriler.forEach((data) => {
+                let tarihFormat = new Date(data.tarih).toLocaleString('tr-TR');
+                let opaklikStil = data.bitis_opakligi < 0.5 ? "class='trend-iyi'" : "";
+
+                let satir = `<tr>
+                    <td>${tarihFormat}</td>
+                    <td style="text-transform: capitalize;">${data.tembel_goz}</td>
+                    <td>${data.oynanan_sure_sn} sn</td>
+                    <td>${data.skor}</td>
+                    <td>${data.baslangic_keskinligi}</td>
+                    <td ${opaklikStil}>${data.bitis_opakligi}</td>
+                    <td>
+                        <button onclick="veriyiSil('${data.doc_id}')" class="btn-sil">Sil</button>
+                    </td>
+                </tr>`;
+                tabloGovdesi.innerHTML += satir;
+            });
+        }).catch((error) => {
+            console.error("Veri çekme hatası:", error);
+            tabloGovdesi.innerHTML = "<tr><td colspan='7' style='color:red;'>Sunucu bağlantı hatası oluştu.</td></tr>";
+        });
+    }
+
+    // Seçilen Veriyi Buluttan Silme Fonksiyonu
+    function veriyiSil(silinecekDocId) {
+        // Yanlışlıkla silmeyi önlemek için güvenlik teyidi
+        let onay = confirm("DİKKAT: Bu klinik seans verisini kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.");
+        
+        if (onay) {
+            db.collection("seans_verileri").doc(silinecekDocId).delete().then(() => {
+                alert("Kayıt başarıyla silindi.");
+                verileriCek(); // Silme işleminden sonra tabloyu otomatik olarak güncelle
+            }).catch((error) => {
+                console.error("Silme işlemi başarısız: ", error);
+                alert("Veri silinirken bir sunucu hatası oluştu.");
+            });
+        }
+    }
+</script>
+
+</body>
+</html>
